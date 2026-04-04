@@ -1,0 +1,41 @@
+# Video and media
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pipeline outputs
+processed/
+*.log
+pipeline_result.json
+
+# Temp files
+*.tmp
+*.bak

@@ -1,0 +1,10 @@
+{
+  "source_dir": "/Volumes/django/base_video_editor/0328NRPC",
+  "output_dir": "/Volumes/django/base_video_editor/0328NRPC/processed",
+  "template": "classrecap",
+  "mode": "single",
+  "target_duration": 120,
+  "resolution": "720p",
+  "bitrate": "1M",
+  "templates_dir": "/Volumes/django/base_video_editor/pipeline/templates"
+}

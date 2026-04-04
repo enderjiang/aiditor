@@ -1,0 +1,262 @@
+# Video Editing Pipeline — OpenClaw SOP
+
+## Overview
+
+This pipeline takes raw video files from a project folder, transcribes speech with Whisper, identifies complete sentences, scores segments by content quality, and produces edited highlight clips. You run this on behalf of the user by interpreting their verbal instructions and writing a `job_config.json`, then executing the pipeline.
+
+The output duration is always specified by the user per job. Always confirm `target_duration` before writing `job_config.json`.
+
+---
+
+## Step 1 — Interpret User Intent
+
+When the user describes a job, extract these parameters from what they say:
+
+| What they say | Parameter | Default |
+|---|---|---|
+| folder / project name | `source_dir` | required |
+| where to save results | `output_dir` | `<source_dir>/processed` |
+| how long the clip should be | `target_duration` | **required — ask if not stated** |
+| one clip per video, or one combined clip | `mode` | `individual` |
+| resolution | `resolution` | `720p` |
+
+**Mode decision:**
+- "one highlight from each video" / "individual clips" → `mode: individual`
+- "one video from all of them" / "combine into one" / "single compilation" → `mode: single`
+
+**Per-folder operation:** Each pipeline run processes one `source_dir`. If `source_dir` is a project folder containing multiple videos, use `mode: single` to produce one compilation output per folder.
+
+**Queue system for multiple folders:** When given multiple folders to process, run them sequentially using `queue.py`. Do not run in parallel (Whisper is CPU/GPU-intensive).
+
+**Job files go in `pipeline/jobs/`** — one JSON per folder. Use `queue.py --add` to create one interactively, or copy an existing job file.
+
+```bash
+# Show what will run (dry-run)
+python queue.py --dry-run
+
+# Run all jobs in jobs/ folder
+python queue.py
+
+# Run specific jobs
+python queue.py jobs/001_foo.json jobs/002_bar.json
+
+# Add a new job interactively
+python queue.py --add
+```
+
+`queue.py` runs each job sequentially, sends a Discord notification when the full queue finishes (or on failure), and writes heartbeat updates per job to `~/HEARTBEAT.md`.
+
+**Per-job heartbeat:** `~/HEARTBEAT.md` is updated after each step and cleared when the entire queue completes. It tracks overall queue progress, not individual step progress.
+
+**Template:** Always use `classrecap` until a new template is created for a specific project type.
+
+---
+
+## Step 2 — Write job_config.json
+
+Write `job_config.json` into the pipeline folder (same directory as `pipeline.py`).
+
+```json
+{
+  "source_dir": "/path/to/project/folder",
+  "output_dir": "/path/to/project/folder/processed",
+  "template": "classrecap",
+  "mode": "individual",
+  "target_duration": "<user-specified, in seconds>",
+  "resolution": "720p",
+  "bitrate": "1M",
+  "templates_dir": "/path/to/pipeline/templates"
+}
+```
+
+Set `templates_dir` to the absolute path of the `pipeline/templates/` folder so the script can find `classrecap.json`.
+
+---
+
+## Step 3 — Run the Pipeline
+
+The pipeline runs in four sub-steps: **Sentence Extract → Segment → Score → Select & Export**.
+
+### Heartbeat
+
+Write progress to `~/HEARTBEAT.md` at these milestones:
+- **Before running** — write file with `status: in-progress`, `started`, `progress`, `eta`
+- **After each step completes** — update `progress` with current step name
+- **On completion** — update `status: done` and `progress` with final result, then delete the file
+- **On error** — set `status: error` with error description
+
+Heartbeat file (`~/HEARTBEAT.md`):
+```markdown
+# HEARTBEAT
+task: base_video_editor pipeline
+agent: engineer
+started: <ISO timestamp>
+status: in-progress
+progress: <current step and what it's doing>
+eta: <rough estimate>
+```
+
+The agent monitors this file every ~15 minutes. Updates must be written to the same file path throughout execution.
+
+### 3A — Sentence Extraction
+
+From each Whisper transcript, extract complete sentences as atomic speech units.
+
+**Complete sentence definition:**
+- Ends with sentence-ending punctuation: `.` `!` `?`
+- The next word in the transcript must start at least **2 seconds after** the sentence's last word ends (gap ≥ 2s confirms natural pause)
+
+**Rules:**
+- Discard any sentence shorter than **2 seconds** of actual speech
+- The sentence is the atomic unit — it is never split further
+- Sentence timestamps: `start` = first word's start, `end` = last word's end
+
+**Output per sentence:**
+- `start` — timestamp of first word (seconds)
+- `end` — timestamp of last word (seconds)
+- `duration` — `end - start`
+- `text` — the full sentence text (words joined)
+- `word_count` — number of words in sentence
+
+### 3B — Segment
+
+Group sentences into candidate segments using silence as the boundary signal.
+
+**Primary rule — silence break:**
+If the gap between the end of one sentence and the start of the next is **≥ 5 seconds**, treat that as a segment boundary. 5 seconds indicates a topic change or natural pause.
+
+**Overflow rule — forced break:**
+If a segment has been building for **> 30 seconds** without hitting a 5-second silence, force a cut at the next sentence boundary. This prevents any single segment from becoming too long to be usable as a clip.
+
+**After segmentation:**
+Each candidate segment has:
+- `start` — timestamp of its first sentence's first word
+- `end` — timestamp of its last sentence's last word
+- `duration` — `end - start`
+- `sentences` — list of sentence objects in this segment
+- `word_count` — total words across all sentences
+- `words_per_second` — `word_count / duration`
+
+### 3C — Score
+
+Score every candidate segment using the active template's rules. For `classrecap`:
+
+**1. Word density score**
+```
+density_score = words_per_second * word_density_multiplier
+```
+Higher speech rate = more engaging. Slow or drawn-out speech scores lower.
+
+**2. Action keyword score**
+Count how many words in the segment appear in `action_keywords`. Multiply by `action_score_multiplier`.
+```
+keyword_score = keyword_hit_count * action_score_multiplier
+```
+
+**3. Sentence completeness bonus / penalty**
+- If the segment's last sentence ends with a sentence-ending punctuation mark (`.`, `!`, `?`) → add `complete_sentence_bonus`
+- If the last sentence ends mid-sentence (no terminal punctuation) → subtract `incomplete_sentence_penalty`
+
+**4. Question bonus**
+If any word in the segment matches `question_keywords` → add `question_bonus`.
+
+**Final score:**
+```
+score = density_score + keyword_score + sentence_bonus + question_bonus
+```
+
+Attach the score to each candidate segment.
+
+### 3D — Select and Export
+
+**Selection (duration-driven only, no target_clips parameter):**
+1. Sort all scored candidates in descending order by score.
+2. Greedily take the highest-scored segments until total duration hits `target_duration ± 10 seconds`.
+3. If total is **too long**: drop the lowest-ranked selected segment until within range.
+4. Re-sort the final selected segments by their original `start` time so the edit plays in chronological order.
+
+**Export:**
+- Cut each segment from the source video using the `start`/`end` timestamps (use ffmpeg with `-ss` and `-to`; keep exact frame and audio alignment).
+- Concatenate the segments in timeline order into the final output file.
+- Output filename: `<video_stem>_highlight_<duration>s_<n>clips.mp4` (n = actual clips selected)
+
+---
+
+## Step 4 — Verify Outputs
+
+Expected outputs per video (individual mode):
+```
+<video_stem>_highlight_<duration>s_<n>clips.mp4   ← edited clip
+<video_stem>_transcript.json                      ← full Whisper transcript
+```
+
+Expected output (single mode):
+```
+compilation_classrecap_<duration>s_<n>clips.mp4   ← combined clip
+<video_stem>_transcript.json                      ← one per source video
+```
+
+Always report back to the user:
+- How many videos were processed
+- Output file names and durations
+- Number of sentences extracted, segments created, and segments selected
+- Any videos that were skipped (too short, transcription failed)
+- Location of the output folder
+
+---
+
+## Step 5 — Handle Errors
+
+If `status` is `error`, read the `message` field and act accordingly:
+
+| Error message | Action |
+|---|---|
+| "No video files found" | Confirm `source_dir` path with user |
+| "Template not found" | Check `templates_dir` path points to `pipeline/templates/` |
+| "Transcription produced no output" | Videos may have no speech — ask user if they want a scene-based fallback |
+| "No segments selected" | Source speech may not match template keywords — ask user what type of content it is |
+| "Duration target unreachable" | Not enough usable speech — report how many seconds were available and ask user to lower `target_duration` |
+
+---
+
+## Reference: Config Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `source_dir` | string | yes | Folder containing source video files |
+| `output_dir` | string | yes | Folder to write outputs (created if missing) |
+| `template` | string | no | Template name, default `classrecap` |
+| `mode` | string | no | `individual` or `single`, default `individual` |
+| `target_duration` | number | yes | Target clip length in seconds — always ask the user |
+| `resolution` | string | no | `720p` or `1080p`, default `720p` |
+| `bitrate` | string | no | Video bitrate, default `1M` |
+| `templates_dir` | string | no | Path to templates folder |
+
+---
+
+## Adding a New Template
+
+Only create a new template when the user has a distinct content type that `classrecap` scores poorly for. A template is a JSON file in `pipeline/templates/` with this structure:
+
+```json
+{
+  "template_name": "yourtemplate",
+  "description": "One-line description of what content this serves",
+  "action_keywords": ["word1", "word2", "..."],
+  "scoring_weights": {
+    "action_score_multiplier": 3.0,
+    "word_density_multiplier": 1.0,
+    "complete_sentence_bonus": 2.5,
+    "incomplete_sentence_penalty": 0.3,
+    "question_bonus": 1.0
+  },
+  "selection_rules": {
+    "prefer_complete_sentences": true,
+    "max_segment_duration": 15.0,
+    "min_segment_duration": 2.0,
+    "target_clips_per_video": 5
+  }
+}
+```
+
+Adjust `word_density_multiplier` up for fast-paced content, down for slow/deliberate speech. Raise `complete_sentence_bonus` for content where coherent sentences matter most.

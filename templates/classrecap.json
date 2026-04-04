@@ -1,0 +1,45 @@
+{
+  "template_name": "classrecap",
+  "description": "Class recap highlight selector — picks exciting moments, complete sentences, and ensures audio-video sync",
+  "action_keywords": [
+    "explain", "understand", "learn", "teach", "show", "demonstrate",
+    "example", "because", "therefore", "so", "means", "important",
+    "remember", "key", "point", "concept", "idea", "question",
+    "answer", "practice", "exercise", "review", "recap", "summary",
+    "today", "lesson", "class", "topic", "step", "process", "method",
+    "basically", "actually", "really", "notice", "see", "think",
+    "right", "okay", "now", "next", "first", "then", "finally",
+    "wow", "awesome", "great", "interesting", "cool", "amazing",
+    "exactly", "perfect", "yes", "no", "maybe", "probably",
+    "guess", "suppose", "imagine", "consider", "discuss", "debate",
+    "listen", "hear", "watch", "look", "check", "notice",
+    "important", "critical", "essential", "vital", "crucial",
+    "what", "why", "how", "when", "where", "who",
+    "because", "since", "although", "however", "therefore"
+  ],
+  "scoring_weights": {
+    "action_score_multiplier": 3.0,
+    "word_density_multiplier": 2.0,
+    "complete_sentence_bonus": 3.0,
+    "incomplete_sentence_penalty": 0.1,
+    "excitement_bonus": 1.5,
+    "question_bonus": 1.0,
+    "max_segment_duration": 15.0
+  },
+  "selection_rules": {
+    "prefer_complete_sentences": true,
+    "max_segment_duration": 15.0,
+    "min_segment_duration": 2.0,
+    "target_clips_per_video": 8,
+    "excitement_keywords": ["wow", "awesome", "great", "interesting", "cool", "amazing"],
+    "question_keywords": ["what", "why", "how", "when", "where", "who", "question"]
+  },
+  "audio_quality_checks": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "bit_depth": 16,
+    "min_audio_duration": 1.0,
+    "sync_tolerance_ms": 50
+  },
+  "notes": "Optimized for fixed-camera classroom conversations. Favors exciting moments (fast speech, questions, engagement) while ensuring complete sentences. Limits segments to 15s for more clips in highlight. Includes audio quality validation."
+}

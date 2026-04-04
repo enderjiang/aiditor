@@ -1,0 +1,11 @@
+{
+  "name": "my_project",
+  "source_dir": "/Volumes/django/base_video_editor/my_project_folder",
+  "output_dir": "/Volumes/django/base_video_editor/my_project_folder/processed",
+  "template": "classrecap",
+  "mode": "single",
+  "target_duration": 120,
+  "resolution": "720p",
+  "bitrate": "1M",
+  "templates_dir": "/Volumes/django/base_video_editor/pipeline/templates"
+}
