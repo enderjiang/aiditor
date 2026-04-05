@@ -6,7 +6,6 @@
 
 ## Project Vision
 
-## Project Vision
 
 ### The Pain Point
 
@@ -100,7 +99,7 @@ This pipeline is designed to run as an **OpenClaw agent task**. The pipeline:
 
 ## System Architecture
 
-See [architecture diagram](docs/options/option_a_baoyu_infographic.png) for visual overview.
+See [architecture diagram](docs/architecture.png) for visual overview.
 
 ```
 Input: Raw Videos (.mp4)
