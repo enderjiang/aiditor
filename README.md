@@ -4,8 +4,11 @@
 
 **First Release:** Class Record Video Editor Agent (executed by OpenClaw)
 
-## Project Vision
+## System Architecture
 
+![System Architecture](docs/architecture.png)
+
+## Project Vision
 
 ### The Pain Point
 
@@ -39,15 +42,27 @@ An automated pipeline that:
 
 ### Token Consumption
 
-Based on pipeline runs with `classrecap` template:
+Using local Whisper (CPU/GPU) instead of API — token cost is **0**.
 
-| Video Duration | Whisper Tokens (approx) | Pipeline Tokens | Total Estimate |
-|----------------|----------------------|-----------------|----------------|
-| 10 min | ~50K | ~10K | ~60K |
-| 30 min | ~150K | ~15K | ~165K |
-| 60 min | ~300K | ~20K | ~320K |
+| Video Duration | Pipeline Tokens | Cost |
+|----------------|-----------------|------|
+| 10 min | ~10K | Free |
+| 30 min | ~15K | Free |
+| 60 min | ~20K | Free |
 
-*Note: Most token consumption is in Whisper transcription. The scoring/selection steps are lightweight.*
+*Note: Only costs would be compute time for Whisper, no API charges.*
+
+### Roadmap
+
+- [ ] **Scenario-specific templates:**
+  - `event_recap` — Event highlights (key moments, applause, Q&A)
+  - `meeting_minutes` — Meeting summaries (decisions, action items)
+  - `lecture_summary` — Educational content (concepts, examples)
+  - `training_clip` — Training videos (step-by-step instructions)
+- [ ] Multi-language support (non-English transcription)
+- [ ] Scene detection fallback (for non-speech videos)
+- [ ] Custom scoring templates per content type
+- [ ] Web UI for configuration and monitoring
 
 ### Current Status
 
@@ -56,13 +71,6 @@ Based on pipeline runs with `classrecap` template:
 - ✅ **Normalized scoring:** Longer clips don't automatically win
 - ✅ **Queue system:** Multi-folder batch processing with notifications
 - ✅ **Heartbeat monitoring:** Progress tracking per SOP
-
-### Roadmap
-
-- [ ] Multi-language support (non-English transcription)
-- [ ] Scene detection fallback (for non-speech videos)
-- [ ] Custom scoring templates per content type
-- [ ] Web UI for configuration and monitoring
 
 ---
 
@@ -78,8 +86,7 @@ pip install openai-whisper
 brew install ffmpeg  # macOS
 
 # Create a job config
-cp jobs/00_TEMPLATE.json jobs/my_project.json
-# Edit my_project.json with your folder path and target duration
+# Copy jobs/00_TEMPLATE.json to jobs/my_project.json and edit the paths
 
 # Run pipeline (via OpenClaw agent)
 python pipeline.py --config job_config.json
@@ -96,32 +103,6 @@ This pipeline is designed to run as an **OpenClaw agent task**. The pipeline:
 - Uses heartbeat for progress tracking
 - Supports queue system for batch processing
 - Can be triggered via OpenClaw's task system
-
-## System Architecture
-
-See [architecture diagram](docs/architecture.png) for visual overview.
-
-```
-Input: Raw Videos (.mp4)
-  │
-  ▼
-[1] Whisper Transcription → Word-level timestamps
-  │
-  ▼
-[2] Sentence Extraction + Segmentation (5s silence = boundary)
-  │
-  ▼
-[3] Content Scoring (normalized per-second)
-  │
-  ▼
-[4] Duration-Driven Selection (target ±10s)
-  │
-  ▼
-[5] ffmpeg Export (cut + concat)
-  │
-  ▼
-Output: Highlight Clips (.mp4)
-```
 
 ## Configuration
 
