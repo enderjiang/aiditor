@@ -1,4 +1,4 @@
-# Aiditor — Base Video Editor Pipeline
+# Aiditor — Video Editor Agent Pipeline(openclaw)
 
 > AI-powered video highlight generation for educational/content video editing
 
